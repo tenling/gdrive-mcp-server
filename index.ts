@@ -98,7 +98,7 @@ async function readFileContent(fileId: string) {
     { responseType: "arraybuffer" },
   );
   const mimeType = file.data.mimeType || "application/octet-stream";
-  
+
   if (mimeType.startsWith("text/") || mimeType === "application/json") {
     return {
       mimeType: mimeType,
@@ -115,7 +115,7 @@ async function readFileContent(fileId: string) {
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const fileId = request.params.uri.replace("gdrive:///", "");
   const result = await readFileContent(fileId);
-  
+
   return {
     contents: [
       {
@@ -167,13 +167,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const userQuery = request.params.arguments?.query as string;
     const escapedQuery = userQuery.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
     const formattedQuery = `fullText contains '${escapedQuery}'`;
-    
+
     const res = await drive.files.list({
       q: formattedQuery,
       pageSize: 10,
       fields: "files(id, name, mimeType, modifiedTime, size)",
     });
-    
+
     const fileList = res.data.files
       ?.map((file: any) => `${file.name} (${file.mimeType}) - ID: ${file.id}`)
       .join("\n");
@@ -221,21 +221,37 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 const credentialsPath = process.env.MCP_GDRIVE_CREDENTIALS || path.join(process.cwd(), "credentials", ".gdrive-server-credentials.json");
 
 async function authenticateAndSaveCredentials() {
-  const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(process.cwd(), "credentials", "gcp-oauth.keys.json");
-  
+  const keyPath = process.env.MCP_GDRIVE_CREDENTIALS || path.join(process.cwd(), "credentials", "gcp-oauth.keys.json");
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(process.cwd(), "credentials", ".gdrive-server-credentials.json");
+
   console.log("Looking for keys at:", keyPath);
   console.log("Will save credentials to:", credentialsPath);
-  
-  const auth = await authenticate({
+
+  const keys = JSON.parse(fs.readFileSync(keyPath, "utf-8"));
+  const clientConfig = keys.web || keys.installed;
+  if (!clientConfig) {
+    throw new Error("Invalid OAuth client configuration - missing web or installed client config");
+  }
+
+  const auth = new google.auth.OAuth2(
+    clientConfig.client_id,
+    clientConfig.client_secret,
+    clientConfig.redirect_uris[0]
+  );
+
+  const credentials = await authenticate({
     keyfilePath: keyPath,
     scopes: ["https://www.googleapis.com/auth/drive.readonly"],
   });
-  
-  fs.writeFileSync(credentialsPath, JSON.stringify(auth.credentials));
+
+  fs.writeFileSync(credentialsPath, JSON.stringify(credentials.credentials));
   console.log("Credentials saved. You can now run the server.");
 }
 
 async function loadCredentialsAndRunServer() {
+  const keyPath = process.env.MCP_GDRIVE_CREDENTIALS || path.join(process.cwd(), "credentials", "gcp-oauth.keys.json");
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(process.cwd(), "credentials", ".gdrive-server-credentials.json");
+
   if (!fs.existsSync(credentialsPath)) {
     console.error(
       "Credentials not found. Please run with 'auth' argument first.",
@@ -243,9 +259,21 @@ async function loadCredentialsAndRunServer() {
     process.exit(1);
   }
 
-  const credentials = JSON.parse(fs.readFileSync(credentialsPath, "utf-8"));
-  const auth = new google.auth.OAuth2();
-  auth.setCredentials(credentials);
+  const keys = JSON.parse(fs.readFileSync(keyPath, "utf-8"));
+  const savedCredentials = JSON.parse(fs.readFileSync(credentialsPath, "utf-8"));
+
+  const clientConfig = keys.web || keys.installed;
+  if (!clientConfig) {
+    throw new Error("Invalid OAuth client configuration - missing web or installed client config");
+  }
+
+  const auth = new google.auth.OAuth2(
+    clientConfig.client_id,
+    clientConfig.client_secret,
+    clientConfig.redirect_uris[0]
+  );
+
+  auth.setCredentials(savedCredentials);
   google.options({ auth });
 
   const transport = new StdioServerTransport();

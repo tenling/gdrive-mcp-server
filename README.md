@@ -48,13 +48,14 @@ The server intelligently handles different Google Workspace file types:
 - npm or yarn
 - A Google Cloud Project
 - A Google Workspace or personal Google account
+- Docker (optional, for containerized deployment)
 
 ### Detailed Google Cloud Setup
 
 1. **Create a Google Cloud Project**
    - Visit the [Google Cloud Console](https://console.cloud.google.com/projectcreate)
    - Click "New Project"
-   - Enter a project name (e.g., "MCP GDrive Server")
+   - Enter a project name
    - Click "Create"
    - Wait for the project to be created and select it
 
@@ -87,22 +88,11 @@ The server intelligently handles different Google Workspace file types:
    - Go to [Credentials](https://console.cloud.google.com/apis/credentials)
    - Click "Create Credentials" at the top
    - Select "OAuth client ID"
-   - Choose Application type: "Desktop app"
+   - Choose Application type: "Desktop application" (Important: Use Desktop app type)
    - Name: "MCP GDrive Server Desktop Client"
    - Click "Create"
-   - In the popup:
-     - Click "Download JSON"
-     - Save the file
-     - Click "OK"
-
-5. **Set Up Credentials in Project**
-   ```bash
-   # Create credentials directory
-   mkdir credentials
-   
-   # Move and rename the downloaded JSON file
-   mv path/to/downloaded/client_secret_*.json credentials/gcp-oauth.keys.json
-   ```
+   - Download the JSON file
+   - Save as `credentials/gcp-oauth.keys.json`
 
 ### Installation
 
@@ -122,8 +112,9 @@ npm run build
 
 1. Create a credentials directory and place your OAuth keys:
    ```bash
-   mkdir credentials
-   # Move your downloaded OAuth JSON file to the credentials directory as gcp-oauth.keys.json
+   mkdir -p credentials
+   # Move your downloaded OAuth JSON file to:
+   # credentials/gcp-oauth.keys.json
    ```
 
 2. Run the authentication command:
@@ -136,17 +127,56 @@ npm run build
 
 ## 🔧 Usage
 
-### As a Command Line Tool
+### Local Usage
 
 ```bash
 # Start the server
 node dist/index.js
 ```
 
-### Integration with Desktop App
+### Docker Usage
 
-Add this configuration to your app's server settings:
+1. Build the Docker image:
+```bash
+docker build -t gdrive-mcp-server .
+```
 
+2. Run the container:
+```bash
+docker run --rm -i \
+  -v "$(pwd)/credentials:/app/credentials:ro" \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/.gdrive-server-credentials.json \
+  -e MCP_GDRIVE_CREDENTIALS=/app/credentials/gcp-oauth.keys.json \
+  gdrive-mcp-server
+```
+
+### MCP Client Configuration
+
+Add this configuration to your MCP client settings:
+
+```json
+{
+  "mcpServers": {
+    "gdrive": {
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-v",
+        "${workspaceFolder}/credentials:/app/credentials:ro",
+        "-e",
+        "GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/.gdrive-server-credentials.json",
+        "-e",
+        "MCP_GDRIVE_CREDENTIALS=/app/credentials/gcp-oauth.keys.json",
+        "gdrive-mcp-server"
+      ]
+    }
+  }
+}
+```
+
+For local (non-Docker) deployment:
 ```json
 {
   "mcpServers": {
@@ -154,52 +184,43 @@ Add this configuration to your app's server settings:
       "command": "node",
       "args": ["path/to/gdrive-mcp-server/dist/index.js"],
       "env": {
-        "GOOGLE_APPLICATION_CREDENTIALS": "path/to/gdrive-mcp-server/credentials/gcp-oauth.keys.json",
-        "MCP_GDRIVE_CREDENTIALS": "path/to/gdrive-mcp-server/credentials/.gdrive-server-credentials.json"
+        "GOOGLE_APPLICATION_CREDENTIALS": "path/to/gdrive-mcp-server/credentials/.gdrive-server-credentials.json",
+        "MCP_GDRIVE_CREDENTIALS": "path/to/gdrive-mcp-server/credentials/gcp-oauth.keys.json"
       }
     }
   }
 }
 ```
 
-Replace `path/to/gdrive-mcp-server` with the actual path to your installation directory.
+## 🔒 Security Considerations
 
-### Example Usage
-
-1. **Search for files**:
-   ```typescript
-   // Search for documents containing "quarterly report"
-   const result = await gdrive_search({ query: "quarterly report" });
-   ```
-
-2. **Read file contents**:
-   ```typescript
-   // Read a specific file using its ID
-   const contents = await gdrive_read_file({ file_id: "your-file-id" });
-   ```
-
-## 🔒 Security
-
-- All sensitive credentials are stored in the `credentials` directory
+- The server has read-only access to Google Drive
+- Credentials are stored in the `credentials` directory
 - OAuth credentials and tokens are excluded from version control
-- Read-only access to Google Drive
-- Secure OAuth 2.0 authentication flow
+- Use Docker volume mounts with `:ro` (read-only) flag for credentials
+- Consider using a dedicated Google account with limited access
+- Review and revoke OAuth access if needed
 
-## 🤝 Contributing
+## 🔍 Troubleshooting
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+1. **"No server info found" Error**
+   - Verify Docker is running
+   - Check if credentials files exist and are mounted correctly
+   - Ensure proper file permissions
+
+2. **Authentication Issues**
+   - Verify OAuth credentials are for a Desktop application type
+   - Re-run authentication with `node dist/index.js auth`
+   - Check environment variables are set correctly
+
+3. **File Access Issues**
+   - Verify Google Drive API is enabled
+   - Check file permissions in Google Drive
+   - Ensure OAuth scope includes drive.readonly
 
 ## 📝 License
 
 This MCP server is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## 🔍 Troubleshooting
-
-If you encounter issues:
-1. Verify your Google Cloud Project setup
-2. Ensure all required OAuth scopes are enabled
-3. Check that credentials are properly placed in the `credentials` directory
-4. Verify file permissions and access rights in Google Drive
 
 ## 📚 Additional Resources
 
